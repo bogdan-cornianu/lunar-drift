@@ -11,6 +11,7 @@ import {
 import { Lander } from '../entities/Lander';
 import { Terrain, PadInfo } from '../entities/Terrain';
 import { Controls } from '../systems/Controls';
+import { isHighScore } from '../systems/HighScores';
 import { Hud } from '../systems/Hud';
 import {
   createPauseState,
@@ -225,6 +226,10 @@ export class GameScene extends Phaser.Scene {
 
   private endGame(): void {
     this.state = 'gameover';
+    if (isHighScore(this.score)) {
+      this.scene.start('NewHighScoreScene', { score: this.score });
+      return;
+    }
     this.scene.start('GameOverScene', { score: this.score });
   }
 

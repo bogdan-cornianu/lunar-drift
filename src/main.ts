@@ -3,7 +3,9 @@ import { GAME_HEIGHT, GAME_WIDTH } from './config';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { GameOverScene } from './scenes/GameOverScene';
+import { HighScoresScene } from './scenes/HighScoresScene';
 import { MenuScene } from './scenes/MenuScene';
+import { NewHighScoreScene } from './scenes/NewHighScoreScene';
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -20,5 +22,5 @@ new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, MenuScene, GameScene, GameOverScene],
+  scene: [BootScene, MenuScene, GameScene, NewHighScoreScene, HighScoresScene, GameOverScene],
 });
