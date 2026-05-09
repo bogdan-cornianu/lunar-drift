@@ -191,6 +191,7 @@ export class GameScene extends Phaser.Scene {
       if (this.settings.screenShake && !this.settings.reducedMotion) {
         this.cameras.main.shake(280, 0.012);
       }
+      this.playCrashExplosion(this.lander.x, this.lander.y);
       this.lander.kill();
       this.time.delayedCall(1100, () => {
         if (this.lives > 0) this.respawn(false);
@@ -240,6 +241,72 @@ export class GameScene extends Phaser.Scene {
     if (!upright) return 'TOUCHDOWN ANGLE TOO HIGH';
     if (!slow) return 'TOUCHDOWN SPEED TOO HIGH';
     return 'UNSAFE TOUCHDOWN';
+  }
+
+  private playCrashExplosion(x: number, y: number): void {
+    const core = this.add.circle(x, y, 10, 0xffd166, 0.92);
+    core.setBlendMode(Phaser.BlendModes.ADD);
+    core.setDepth(40);
+
+    const ring = this.add.circle(x, y, 16);
+    ring.setStrokeStyle(3, 0xff8c42, 0.95);
+    ring.setBlendMode(Phaser.BlendModes.ADD);
+    ring.setDepth(39);
+
+    if (this.settings.reducedMotion) {
+      this.tweens.add({
+        targets: [core, ring],
+        alpha: 0,
+        scale: 1.35,
+        duration: 260,
+        ease: 'Quad.easeOut',
+        onComplete: () => {
+          core.destroy();
+          ring.destroy();
+        },
+      });
+      return;
+    }
+
+    this.tweens.add({
+      targets: core,
+      alpha: 0,
+      scale: 2.4,
+      duration: 300,
+      ease: 'Quad.easeOut',
+      onComplete: () => core.destroy(),
+    });
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      scale: 3.2,
+      duration: 420,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    const tints = [0xff5677, 0xff8c42, 0xffd166, 0xffffff];
+    for (let i = 0; i < 34; i++) {
+      const particle = this.add.image(x, y, 'particle');
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 28 + Math.random() * 54;
+      const duration = 360 + Math.random() * 260;
+      particle.setBlendMode(Phaser.BlendModes.ADD);
+      particle.setDepth(38);
+      particle.setScale(1.4 + Math.random() * 1.7);
+      particle.setTint(tints[Math.floor(Math.random() * tints.length)]);
+
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance,
+        alpha: 0,
+        scale: 0,
+        duration,
+        ease: 'Quad.easeOut',
+        onComplete: () => particle.destroy(),
+      });
+    }
   }
 
   private handleEscape(): void {
