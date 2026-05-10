@@ -8,6 +8,7 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     this.generateLanderTexture();
     this.generatePadTexture();
+    this.generatePowerUpTexture();
     this.generateParticleTexture();
     this.generateStarTexture();
 
@@ -38,6 +39,26 @@ export class BootScene extends Phaser.Scene {
     g.fillStyle(0x33ffaa, 0.5);
     g.fillRect(0, 0, 32, 2);
     g.generateTexture('pad', 32, 8);
+    g.destroy();
+  }
+
+  private generatePowerUpTexture(): void {
+    const g = this.add.graphics({ x: 0, y: 0 });
+    g.lineStyle(2, 0xffffff, 1);
+    g.strokeCircle(16, 16, 13);
+    g.fillStyle(0xffffff, 1);
+    g.fillPoints(
+      [
+        new Phaser.Geom.Point(16, 5),
+        new Phaser.Geom.Point(27, 16),
+        new Phaser.Geom.Point(16, 27),
+        new Phaser.Geom.Point(5, 16),
+      ],
+      true,
+    );
+    g.fillStyle(0x05070d, 1);
+    g.fillCircle(16, 16, 5);
+    g.generateTexture('power-up', 32, 32);
     g.destroy();
   }
 

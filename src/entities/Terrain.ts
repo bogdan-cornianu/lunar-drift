@@ -39,7 +39,9 @@ export class Terrain {
   }> = [];
   private points: TerrainPoint[] = [];
   private pads: PadInfo[] = [];
+  private disabledPads = new Set<PadInfo>();
   private hazardStartTimeMs = 0;
+  private hazardSyncUntilMs = 0;
 
   constructor(private scene: Phaser.Scene) {
     this.group = scene.physics.add.staticGroup();
@@ -49,6 +51,8 @@ export class Terrain {
   regenerate(seed: number, difficulty?: SiteDifficulty, hazardStartTimeMs = 0): void {
     this.clear();
     this.hazardStartTimeMs = hazardStartTimeMs;
+    this.hazardSyncUntilMs = 0;
+    this.disabledPads.clear();
     this.points = generateTerrain({
       width: GAME_WIDTH,
       segments: TERRAIN_SEGMENTS,
@@ -63,7 +67,25 @@ export class Terrain {
 
   updateHazards(timeMs: number): void {
     const elapsedMs = Math.max(0, timeMs - this.hazardStartTimeMs);
+    const synced = this.isHazardSyncActive(timeMs);
     for (const view of this.padViews) {
+      if (this.disabledPads.has(view.pad)) {
+        view.sprite.setTint(0xff2d55);
+        view.sprite.setAlpha(0.72);
+        view.label.setColor('#ff5677');
+        view.label.setText(`DEAD ${view.pad.multiplier}x`);
+        continue;
+      }
+
+      if (synced) {
+        const pulse = 0.78 + Math.sin(timeMs / 160) * 0.16;
+        view.sprite.setTint(0xb58cff);
+        view.sprite.setAlpha(pulse);
+        view.label.setColor('#d8c2ff');
+        view.label.setText(`SYNC ${view.pad.multiplier}x`);
+        continue;
+      }
+
       const state = getPadHazardState(view.pad.hazard, elapsedMs);
       const tint = state === 'offline' ? 0xff5677 : state === 'warning' ? 0xffd166 : 0x6affd9;
       const pulse =
@@ -82,6 +104,34 @@ export class Terrain {
 
   getPads(): readonly PadInfo[] {
     return this.pads;
+  }
+
+  applyHazardSync(timeMs: number, durationMs: number): void {
+    this.hazardSyncUntilMs = Math.max(this.hazardSyncUntilMs, timeMs + durationMs);
+    this.updateHazards(timeMs);
+  }
+
+  isHazardSyncActive(timeMs: number): boolean {
+    return timeMs < this.hazardSyncUntilMs;
+  }
+
+  blackoutNearestPad(x: number): PadInfo | null {
+    let nearest: PadInfo | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const pad of this.pads) {
+      if (this.disabledPads.has(pad)) continue;
+      const centerX = pad.x + pad.width / 2;
+      const distance = Math.abs(centerX - x);
+      if (distance >= nearestDistance) continue;
+      nearest = pad;
+      nearestDistance = distance;
+    }
+    if (nearest) this.disabledPads.add(nearest);
+    return nearest;
+  }
+
+  isPadDisabled(pad: PadInfo): boolean {
+    return this.disabledPads.has(pad);
   }
 
   findPadAt(x: number): PadInfo | null {

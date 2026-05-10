@@ -58,4 +58,14 @@ describe('getPadHazardState', () => {
     expect(canLandOnPad(unstable, 6200)).toBe(false);
     expect(canLandOnPad({ kind: 'stable' }, 6200)).toBe(true);
   });
+
+  it('lets hazard sync temporarily force offline pads landable', () => {
+    expect(canLandOnPad(unstable, 6200, true)).toBe(true);
+    expect(canLandOnPad(unstable, 6200, false)).toBe(false);
+  });
+
+  it('lets permanent pad blackout override hazard sync', () => {
+    expect(canLandOnPad(unstable, 5000, true, true)).toBe(false);
+    expect(canLandOnPad({ kind: 'stable' }, 5000, false, true)).toBe(false);
+  });
 });

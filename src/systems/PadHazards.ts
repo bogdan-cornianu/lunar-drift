@@ -57,7 +57,14 @@ export function getPadHazardState(hazard: PadHazard, timeMs: number): PadHazardS
   return 'online';
 }
 
-export function canLandOnPad(hazard: PadHazard, timeMs: number): boolean {
+export function canLandOnPad(
+  hazard: PadHazard,
+  timeMs: number,
+  forceOnline = false,
+  forceOffline = false,
+): boolean {
+  if (forceOffline) return false;
+  if (forceOnline) return true;
   return getPadHazardState(hazard, timeMs) !== 'offline';
 }
 
