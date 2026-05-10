@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config';
+import { difficultyLabel, DifficultyLevel, nextDifficulty } from '../systems/Difficulty';
 import { clearHighScores, loadHighScores } from '../systems/HighScores';
+import { loadSettings } from '../systems/Settings';
 
 interface HighScoresData {
   returnScene?: 'MenuScene' | 'GameOverScene';
   score?: number;
+  difficulty?: DifficultyLevel;
 }
 
 const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
@@ -16,7 +19,9 @@ const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
 export class HighScoresScene extends Phaser.Scene {
   private returnScene: 'MenuScene' | 'GameOverScene' = 'MenuScene';
   private finalScore = 0;
+  private difficulty: DifficultyLevel = loadSettings().difficulty;
   private confirmingClear = false;
+  private difficultyButton!: Phaser.GameObjects.Text;
   private clearButton!: Phaser.GameObjects.Text;
   private clearHint!: Phaser.GameObjects.Text;
   private scoreRows: Phaser.GameObjects.GameObject[] = [];
@@ -28,6 +33,7 @@ export class HighScoresScene extends Phaser.Scene {
   create(data: HighScoresData): void {
     this.returnScene = data.returnScene ?? 'MenuScene';
     this.finalScore = Math.max(0, Math.floor(data.score ?? 0));
+    this.difficulty = data.difficulty ?? loadSettings().difficulty;
     this.confirmingClear = false;
     this.cameras.main.setBackgroundColor('#05070d');
     this.spawnStars();
@@ -41,6 +47,7 @@ export class HighScoresScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    this.difficultyButton = this.addButton(cx, 122, '', () => this.cycleDifficulty());
     this.renderScores();
     this.addButton(cx - 160, 540, 'BACK', () => this.goBack());
     this.addButton(cx, 540, 'NEW GAME', () => this.scene.start('GameScene'));
@@ -60,7 +67,9 @@ export class HighScoresScene extends Phaser.Scene {
     this.scoreRows.forEach((row) => row.destroy());
     this.scoreRows = [];
 
-    const scores = loadHighScores();
+    this.difficultyButton.setText(`DIFFICULTY  ${difficultyLabel(this.difficulty).toUpperCase()}`);
+
+    const scores = loadHighScores(this.difficulty);
     const cx = GAME_WIDTH / 2;
     if (scores.length === 0) {
       this.scoreRows.push(
@@ -110,7 +119,7 @@ export class HighScoresScene extends Phaser.Scene {
       return;
     }
 
-    clearHighScores();
+    clearHighScores(this.difficulty);
     this.confirmingClear = false;
     this.clearButton.setText('CLEAR SCORES');
     this.clearButton.setColor('#e8eef7');
@@ -120,10 +129,19 @@ export class HighScoresScene extends Phaser.Scene {
 
   private goBack(): void {
     if (this.returnScene === 'GameOverScene') {
-      this.scene.start('GameOverScene', { score: this.finalScore });
+      this.scene.start('GameOverScene', { score: this.finalScore, difficulty: this.difficulty });
       return;
     }
     this.scene.start('MenuScene');
+  }
+
+  private cycleDifficulty(): void {
+    this.difficulty = nextDifficulty(this.difficulty);
+    this.confirmingClear = false;
+    this.clearButton.setText('CLEAR SCORES');
+    this.clearButton.setColor('#e8eef7');
+    this.clearHint.setText('');
+    this.renderScores();
   }
 
   private formatDate(timestamp: number): string {

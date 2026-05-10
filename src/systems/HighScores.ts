@@ -1,3 +1,9 @@
+import {
+  DEFAULT_DIFFICULTY,
+  DifficultyLevel,
+  DIFFICULTY_LEVELS,
+} from './Difficulty';
+
 export interface HighScoreEntry {
   name: string;
   score: number;
@@ -14,37 +20,61 @@ export const HIGH_SCORES_STORAGE_KEY = 'lunar-drift-high-scores';
 export const HIGH_SCORE_LIMIT = 10;
 export const HIGH_SCORE_NAME_MAX_LENGTH = 8;
 
-export function loadHighScores(storage = browserStorage()): HighScoreEntry[] {
+type HighScoreTables = Partial<Record<DifficultyLevel, HighScoreEntry[]>>;
+
+export function loadHighScores(
+  difficulty: DifficultyLevel = DEFAULT_DIFFICULTY,
+  storage = browserStorage(),
+): HighScoreEntry[] {
   if (!storage) return [];
 
   try {
     const raw = storage.getItem(HIGH_SCORES_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return rankHighScores(parsed.filter(isHighScoreEntry));
+    if (Array.isArray(parsed)) {
+      return difficulty === 'normal' ? rankHighScores(parsed.filter(isHighScoreEntry)) : [];
+    }
+    return rankHighScores(readTables(parsed)[difficulty] ?? []);
   } catch {
     return [];
   }
 }
 
-export function isHighScore(score: number, storage = browserStorage()): boolean {
-  const scores = loadHighScores(storage);
+export function isHighScore(
+  score: number,
+  difficulty: DifficultyLevel = DEFAULT_DIFFICULTY,
+  storage = browserStorage(),
+): boolean {
+  const scores = loadHighScores(difficulty, storage);
   if (scores.length < HIGH_SCORE_LIMIT) return true;
   return score >= scores[scores.length - 1].score;
 }
 
 export function saveHighScore(
   entry: HighScoreEntry,
+  difficulty: DifficultyLevel = DEFAULT_DIFFICULTY,
   storage = browserStorage(),
 ): HighScoreEntry[] {
-  const scores = rankHighScores([...loadHighScores(storage), normalizeEntry(entry)]);
-  if (storage) storage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify(scores));
+  const tables = loadHighScoreTables(storage);
+  const scores = rankHighScores([...(tables[difficulty] ?? []), normalizeEntry(entry)]);
+  tables[difficulty] = scores;
+  if (storage) storage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify(tables));
   return scores;
 }
 
-export function clearHighScores(storage = browserStorage()): void {
-  storage?.removeItem(HIGH_SCORES_STORAGE_KEY);
+export function clearHighScores(
+  difficulty: DifficultyLevel = DEFAULT_DIFFICULTY,
+  storage = browserStorage(),
+): void {
+  if (!storage) return;
+  const tables = loadHighScoreTables(storage);
+  delete tables[difficulty];
+  if (hasAnyScores(tables)) {
+    storage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify(tables));
+    return;
+  }
+  storage.removeItem(HIGH_SCORES_STORAGE_KEY);
 }
 
 export function normalizeHighScoreName(name: string): string {
@@ -62,6 +92,40 @@ function rankHighScores(scores: HighScoreEntry[]): HighScoreEntry[] {
     .map(normalizeEntry)
     .sort((a, b) => b.score - a.score || b.timestamp - a.timestamp)
     .slice(0, HIGH_SCORE_LIMIT);
+}
+
+function loadHighScoreTables(storage: StorageLike | undefined): HighScoreTables {
+  if (!storage) return {};
+
+  try {
+    const raw = storage.getItem(HIGH_SCORES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return { normal: rankHighScores(parsed.filter(isHighScoreEntry)) };
+    }
+    return readTables(parsed);
+  } catch {
+    return {};
+  }
+}
+
+function readTables(value: unknown): HighScoreTables {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+  const input = value as Partial<Record<DifficultyLevel, unknown>>;
+  const tables: HighScoreTables = {};
+  for (const difficulty of DIFFICULTY_LEVELS) {
+    const scores = input[difficulty];
+    if (Array.isArray(scores)) {
+      tables[difficulty] = rankHighScores(scores.filter(isHighScoreEntry));
+    }
+  }
+  return tables;
+}
+
+function hasAnyScores(tables: HighScoreTables): boolean {
+  return DIFFICULTY_LEVELS.some((difficulty) => (tables[difficulty]?.length ?? 0) > 0);
 }
 
 function normalizeEntry(entry: HighScoreEntry): HighScoreEntry {

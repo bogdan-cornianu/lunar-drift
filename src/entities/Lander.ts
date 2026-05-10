@@ -26,6 +26,7 @@ export class Lander extends Phaser.Physics.Arcade.Sprite {
   fuel = FUEL_MAX;
   alive = true;
   windX = 0;
+  fuelBurnScale = 1;
   exhaustParticlesEnabled = true;
   private particles: ExhaustParticle[] = [];
   private emitAccumulator = 0;
@@ -84,6 +85,10 @@ export class Lander extends Phaser.Physics.Arcade.Sprite {
     this.windX = windX;
   }
 
+  setFuelBurnScale(scale: number): void {
+    this.fuelBurnScale = scale;
+  }
+
   setExhaustParticlesEnabled(enabled: boolean): void {
     this.exhaustParticlesEnabled = enabled;
     if (enabled) return;
@@ -124,7 +129,7 @@ export class Lander extends Phaser.Physics.Arcade.Sprite {
       const angle = this.rotation - Math.PI / 2;
       body.acceleration.x = Math.cos(angle) * THRUST + this.windX;
       body.acceleration.y = Math.sin(angle) * THRUST + GRAVITY;
-      this.fuel = Math.max(0, this.fuel - FUEL_BURN_PER_SEC * dt);
+      this.fuel = Math.max(0, this.fuel - FUEL_BURN_PER_SEC * this.fuelBurnScale * dt);
       if (this.exhaustParticlesEnabled) this.spawnExhaust(dt);
     } else {
       body.acceleration.x = this.windX;

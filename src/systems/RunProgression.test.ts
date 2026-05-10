@@ -35,6 +35,49 @@ describe('RunProgression', () => {
     expect(Math.abs(later.windX)).toBeLessThanOrEqual(MAX_WIND);
   });
 
+  it('keeps Normal progression matching the existing baseline', () => {
+    const progression = new RunProgression('normal');
+
+    expect(progression.getDifficulty()).toEqual({
+      site: 1,
+      difficulty: 'normal',
+      terrainRoughness: 0.56,
+      padWidthScale: 1,
+      windX: 0,
+    });
+
+    progression.advanceSite();
+    progression.advanceSite();
+    progression.advanceSite();
+
+    expect(progression.getDifficulty().windX).toBe(8.8);
+  });
+
+  it('scales site pressure by difficulty while preserving the site number', () => {
+    const easy = new RunProgression('easy');
+    const normal = new RunProgression('normal');
+    const hard = new RunProgression('hard');
+
+    for (let i = 0; i < 5; i++) {
+      easy.advanceSite();
+      normal.advanceSite();
+      hard.advanceSite();
+    }
+
+    const easyDifficulty = easy.getDifficulty();
+    const normalDifficulty = normal.getDifficulty();
+    const hardDifficulty = hard.getDifficulty();
+
+    expect(easyDifficulty.site).toBe(normalDifficulty.site);
+    expect(hardDifficulty.site).toBe(normalDifficulty.site);
+    expect(easyDifficulty.terrainRoughness).toBeLessThan(normalDifficulty.terrainRoughness);
+    expect(hardDifficulty.terrainRoughness).toBeGreaterThan(normalDifficulty.terrainRoughness);
+    expect(easyDifficulty.padWidthScale).toBeGreaterThan(normalDifficulty.padWidthScale);
+    expect(hardDifficulty.padWidthScale).toBeLessThan(normalDifficulty.padWidthScale);
+    expect(Math.abs(easyDifficulty.windX)).toBeLessThan(Math.abs(normalDifficulty.windX));
+    expect(Math.abs(hardDifficulty.windX)).toBeGreaterThan(Math.abs(normalDifficulty.windX));
+  });
+
   it('increments streak for perfect and good landings', () => {
     const progression = new RunProgression();
     progression.resolveLanding({ grade: 'PERFECT', fuelRemaining: 80, multiplier: 2, vy: 8 });
@@ -118,5 +161,38 @@ describe('RunProgression', () => {
       vy: 30,
     });
     expect(roughMissedObjective.nextFuel).toBe(Math.round(FUEL_MAX * ROUGH_LANDING_REFUEL));
+  });
+
+  it('adjusts refuel generosity by difficulty', () => {
+    const input = {
+      grade: 'GOOD' as const,
+      fuelRemaining: 80,
+      multiplier: 2,
+      vy: 18,
+    };
+
+    const easy = new RunProgression('easy').resolveLanding(input);
+    const normal = new RunProgression('normal').resolveLanding(input);
+    const hard = new RunProgression('hard').resolveLanding(input);
+
+    expect(easy.nextFuel).toBeGreaterThan(normal.nextFuel);
+    expect(hard.nextFuel).toBeLessThan(normal.nextFuel);
+  });
+
+  it('adjusts objective strictness by difficulty', () => {
+    const easy = new RunProgression('easy');
+    const hard = new RunProgression('hard');
+
+    for (let i = 0; i < 6; i++) {
+      easy.advanceSite();
+      hard.advanceSite();
+    }
+    easy.prepareSite(2);
+    hard.prepareSite(2);
+
+    expect(easy.objective.kind).toBe('fuel');
+    expect(hard.objective.kind).toBe('fuel');
+    expect(easy.objective.label).toBe('LAND WITH 40+ FUEL');
+    expect(hard.objective.label).toBe('LAND WITH 60+ FUEL');
   });
 });
