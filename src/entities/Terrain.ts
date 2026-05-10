@@ -14,28 +14,41 @@ import {
 } from '../config';
 import { generateTerrain, mulberry32, TerrainPoint } from '../utils/midpointDisplacement';
 import { SiteDifficulty } from '../systems/RunProgression';
+import {
+  createPadHazard,
+  getPadHazardState,
+  PadHazard,
+  PadHazardState,
+} from '../systems/PadHazards';
 
 export interface PadInfo {
   x: number;
   y: number;
   width: number;
   multiplier: number;
+  hazard: PadHazard;
 }
 
 export class Terrain {
   readonly group: Phaser.Physics.Arcade.StaticGroup;
   private graphics: Phaser.GameObjects.Graphics;
-  private padSprites: Phaser.GameObjects.Image[] = [];
+  private padViews: Array<{
+    pad: PadInfo;
+    sprite: Phaser.GameObjects.Image;
+    label: Phaser.GameObjects.Text;
+  }> = [];
   private points: TerrainPoint[] = [];
   private pads: PadInfo[] = [];
+  private hazardStartTimeMs = 0;
 
   constructor(private scene: Phaser.Scene) {
     this.group = scene.physics.add.staticGroup();
     this.graphics = scene.add.graphics();
   }
 
-  regenerate(seed: number, difficulty?: SiteDifficulty): void {
+  regenerate(seed: number, difficulty?: SiteDifficulty, hazardStartTimeMs = 0): void {
     this.clear();
+    this.hazardStartTimeMs = hazardStartTimeMs;
     this.points = generateTerrain({
       width: GAME_WIDTH,
       segments: TERRAIN_SEGMENTS,
@@ -44,8 +57,27 @@ export class Terrain {
       roughness: difficulty?.terrainRoughness,
       seed,
     });
-    this.insertPads(seed, difficulty?.padWidthScale ?? 1);
+    this.insertPads(seed, difficulty?.padWidthScale ?? 1, difficulty?.site ?? 1);
     this.draw();
+  }
+
+  updateHazards(timeMs: number): void {
+    const elapsedMs = Math.max(0, timeMs - this.hazardStartTimeMs);
+    for (const view of this.padViews) {
+      const state = getPadHazardState(view.pad.hazard, elapsedMs);
+      const tint = state === 'offline' ? 0xff5677 : state === 'warning' ? 0xffd166 : 0x6affd9;
+      const pulse =
+        view.pad.hazard.kind === 'unstable' && state === 'online'
+          ? 0.82 + Math.sin((elapsedMs + view.pad.hazard.phaseOffsetMs) / 260) * 0.12
+          : 1;
+
+      view.sprite.setTint(tint);
+      view.sprite.setAlpha(state === 'offline' ? 0.95 : pulse);
+      view.label.setColor(
+        state === 'offline' ? '#ff5677' : state === 'warning' ? '#ffd166' : '#6affd9',
+      );
+      view.label.setText(this.padLabel(view.pad.multiplier, view.pad.hazard.kind, state));
+    }
   }
 
   getPads(): readonly PadInfo[] {
@@ -87,12 +119,15 @@ export class Terrain {
   private clear(): void {
     this.graphics.clear();
     this.group.clear(true, true);
-    for (const s of this.padSprites) s.destroy();
-    this.padSprites = [];
+    for (const view of this.padViews) {
+      view.sprite.destroy();
+      view.label.destroy();
+    }
+    this.padViews = [];
     this.pads = [];
   }
 
-  private insertPads(seed: number, padWidthScale: number): void {
+  private insertPads(seed: number, padWidthScale: number, site: number): void {
     const rand = mulberry32(seed ^ 0x9e3779b9);
     const used: Array<[number, number]> = [];
     let attempts = 0;
@@ -106,7 +141,18 @@ export class Terrain {
       used.push([x, x + width]);
 
       const padY = this.flattenSegment(x, x + width);
-      this.pads.push({ x, y: padY, width, multiplier });
+      this.pads.push({
+        x,
+        y: padY,
+        width,
+        multiplier,
+        hazard: createPadHazard({
+          seed,
+          site,
+          multiplier,
+          padIndex: this.pads.length,
+        }),
+      });
     }
   }
 
@@ -148,7 +194,6 @@ export class Terrain {
     for (const pad of this.pads) {
       const sprite = this.scene.add.image(pad.x + pad.width / 2, pad.y - PAD_HEIGHT / 2, 'pad');
       sprite.setDisplaySize(pad.width, PAD_HEIGHT);
-      this.padSprites.push(sprite);
 
       const label = this.scene.add.text(pad.x + pad.width / 2, pad.y - 18, `${pad.multiplier}x`, {
         fontFamily: 'monospace',
@@ -156,7 +201,14 @@ export class Terrain {
         color: '#6affd9',
       });
       label.setOrigin(0.5, 1);
-      this.padSprites.push(label as unknown as Phaser.GameObjects.Image);
+      this.padViews.push({ pad, sprite, label });
     }
+  }
+
+  private padLabel(multiplier: number, hazard: PadHazard['kind'], state: PadHazardState): string {
+    if (hazard === 'stable') return `${multiplier}x`;
+    if (state === 'offline') return `OFF ${multiplier}x`;
+    if (state === 'warning') return `WARN ${multiplier}x`;
+    return `~ ${multiplier}x`;
   }
 }
