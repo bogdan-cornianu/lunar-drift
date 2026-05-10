@@ -20,6 +20,7 @@ import {
   resetPauseState,
   resumeState,
 } from '../systems/PauseState';
+import { canLandOnPad } from '../systems/PadHazards';
 import { RunProgression } from '../systems/RunProgression';
 import { computeLandingScore } from '../systems/Scoring';
 import { GameSettings, loadSettings } from '../systems/Settings';
@@ -62,7 +63,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.resume();
     this.currentSeed = this.makeSeed();
     this.progression.prepareSite(this.currentSeed);
-    this.terrain.regenerate(this.currentSeed, this.progression.getDifficulty());
+    this.terrain.regenerate(this.currentSeed, this.progression.getDifficulty(), this.time.now);
 
     this.lander = new Lander(this, GAME_WIDTH / 2, 60);
     this.lander.setWind(this.progression.getDifficulty().windX);
@@ -82,6 +83,7 @@ export class GameScene extends Phaser.Scene {
   override update(time: number, delta: number): void {
     if (this.pauseState.paused) return;
 
+    this.terrain.updateHazards(time);
     this.lander.update(time, delta);
 
     if (this.state === 'flying') {
@@ -142,8 +144,9 @@ export class GameScene extends Phaser.Scene {
     const angleDeg = this.normalizedAngleDeg();
     const upright = Math.abs(angleDeg) <= SAFE_ANGLE_DEG;
     const slow = Math.abs(vx) <= SAFE_VX && Math.abs(vy) <= SAFE_VY;
+    const padOnline = pad ? canLandOnPad(pad.hazard, this.time.now) : false;
 
-    if (pad && upright && slow) {
+    if (pad && padOnline && upright && slow) {
       this.snapLanderToTerrain();
       this.lander.settle();
       const provisional = computeLandingScore({
@@ -188,7 +191,7 @@ export class GameScene extends Phaser.Scene {
       this.lives -= 1;
       this.progression.resetStreak();
       this.hud.showToast(this, this.lives > 0 ? 'CRASHED' : 'GAME OVER', '#ff5677');
-      this.hud.showBreakdown(this, this.crashReason(Boolean(pad), upright, slow));
+      this.hud.showBreakdown(this, this.crashReason(Boolean(pad), Boolean(pad && !padOnline), upright, slow));
       if (this.settings.screenShake && !this.settings.reducedMotion) {
         this.cameras.main.shake(280, 0.012);
       }
@@ -217,7 +220,7 @@ export class GameScene extends Phaser.Scene {
       this.nextFuel = FUEL_MAX;
     }
     const difficulty = this.progression.getDifficulty();
-    this.terrain.regenerate(this.currentSeed, difficulty);
+    this.terrain.regenerate(this.currentSeed, difficulty, this.time.now);
     this.lander.setWind(difficulty.windX);
     this.lander.reset(GAME_WIDTH / 2, 60, this.nextFuel);
     this.applySettings();
@@ -241,8 +244,9 @@ export class GameScene extends Phaser.Scene {
     return Phaser.Math.Angle.WrapDegrees(Phaser.Math.RadToDeg(this.lander.rotation));
   }
 
-  private crashReason(onPad: boolean, upright: boolean, slow: boolean): string {
+  private crashReason(onPad: boolean, padOffline: boolean, upright: boolean, slow: boolean): string {
     if (!onPad) return 'MISSED LANDING PAD';
+    if (padOffline) return 'PAD OFFLINE';
     if (!upright) return 'TOUCHDOWN ANGLE TOO HIGH';
     if (!slow) return 'TOUCHDOWN SPEED TOO HIGH';
     return 'UNSAFE TOUCHDOWN';
