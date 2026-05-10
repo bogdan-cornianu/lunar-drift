@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OBJECTIVE_BONUS, STREAK_BONUS } from '../config';
-import { computeLandingScore } from './Scoring';
+import { computeLandingScore, getLandingLimits } from './Scoring';
 
 describe('computeLandingScore', () => {
   it('grades a clean touchdown as perfect and applies the higher fuel bonus', () => {
@@ -66,5 +66,28 @@ describe('computeLandingScore', () => {
     expect(score.total).toBe(
       score.base + score.fuelBonus + score.streakBonus + score.objectiveBonus,
     );
+  });
+
+  it('scales landing grades by difficulty', () => {
+    const input = {
+      multiplier: 2,
+      fuelRemaining: 30,
+      vx: 18,
+      vy: 27,
+      angleDeg: 10,
+      streak: 0,
+      objectiveMet: false,
+    };
+
+    expect(computeLandingScore(input, 'easy').grade).toBe('GOOD');
+    expect(computeLandingScore(input, 'normal').grade).toBe('ROUGH');
+    expect(computeLandingScore({ ...input, vx: 15, vy: 23, angleDeg: 8 }, 'hard').grade).toBe(
+      'ROUGH',
+    );
+  });
+
+  it('scales safe touchdown limits by difficulty', () => {
+    expect(getLandingLimits('easy').safeVy).toBeGreaterThan(getLandingLimits('normal').safeVy);
+    expect(getLandingLimits('hard').safeVy).toBeLessThan(getLandingLimits('normal').safeVy);
   });
 });

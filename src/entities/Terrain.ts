@@ -61,7 +61,7 @@ export class Terrain {
       roughness: difficulty?.terrainRoughness,
       seed,
     });
-    this.insertPads(seed, difficulty?.padWidthScale ?? 1, difficulty?.site ?? 1);
+    this.insertPads(seed, difficulty?.padWidthScale ?? 1, difficulty);
     this.draw();
   }
 
@@ -177,7 +177,7 @@ export class Terrain {
     this.pads = [];
   }
 
-  private insertPads(seed: number, padWidthScale: number, site: number): void {
+  private insertPads(seed: number, padWidthScale: number, difficulty?: SiteDifficulty): void {
     const rand = mulberry32(seed ^ 0x9e3779b9);
     const used: Array<[number, number]> = [];
     let attempts = 0;
@@ -196,12 +196,15 @@ export class Terrain {
         y: padY,
         width,
         multiplier,
-        hazard: createPadHazard({
-          seed,
-          site,
-          multiplier,
-          padIndex: this.pads.length,
-        }),
+        hazard: createPadHazard(
+          {
+            seed,
+            site: difficulty?.site ?? 1,
+            multiplier,
+            padIndex: this.pads.length,
+          },
+          difficulty?.difficulty,
+        ),
       });
     }
   }

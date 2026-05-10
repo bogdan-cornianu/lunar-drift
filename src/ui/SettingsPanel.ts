@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { difficultyLabel, nextDifficulty } from '../systems/Difficulty';
 import {
   GameSettings,
   saveSettings,
@@ -14,7 +15,7 @@ const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
 };
 
 interface SettingOption {
-  key: SettingKey;
+  key: Extract<SettingKey, 'screenShake' | 'reducedMotion' | 'exhaustParticles'>;
   label: string;
 }
 
@@ -40,16 +41,29 @@ export class SettingsPanel {
 
     const cx = Number(scene.game.config.width) / 2;
     const cy = Number(scene.game.config.height) / 2;
-    this.container.add(scene.add.rectangle(cx, cy, 420, 310, 0x080c14, 0.94));
-    this.container.add(scene.add.rectangle(cx, cy, 420, 310).setStrokeStyle(2, 0x6affd9, 0.8));
+    this.container.add(scene.add.rectangle(cx, cy, 420, 360, 0x080c14, 0.94));
+    this.container.add(scene.add.rectangle(cx, cy, 420, 360).setStrokeStyle(2, 0x6affd9, 0.8));
     this.container.add(
       scene.add
-        .text(cx, cy - 120, 'SETTINGS', { ...TEXT_STYLE, fontSize: '28px', color: '#6affd9' })
+        .text(cx, cy - 145, 'SETTINGS', { ...TEXT_STYLE, fontSize: '28px', color: '#6affd9' })
         .setOrigin(0.5),
     );
 
+    const difficultyRow = this.makeButton(cx, cy - 82, this.difficultyText(), () => {
+      this.settings = updateSetting(
+        this.settings,
+        'difficulty',
+        nextDifficulty(this.settings.difficulty),
+      );
+      saveSettings(this.settings);
+      this.renderRows();
+      onChange?.(this.settings);
+    });
+    this.rows.push(difficultyRow);
+    this.container.add(difficultyRow);
+
     OPTIONS.forEach((option, index) => {
-      const row = this.makeButton(cx, cy - 58 + index * 48, this.rowText(option), () => {
+      const row = this.makeButton(cx, cy - 34 + index * 48, this.rowText(option), () => {
         this.settings = updateSetting(this.settings, option.key, !this.settings[option.key]);
         saveSettings(this.settings);
         this.renderRows();
@@ -59,7 +73,7 @@ export class SettingsPanel {
       this.container.add(row);
     });
 
-    this.container.add(this.makeButton(cx, cy + 116, 'BACK', () => onBack(this.settings)));
+    this.container.add(this.makeButton(cx, cy + 132, 'BACK', () => onBack(this.settings)));
   }
 
   destroy(): void {
@@ -67,9 +81,14 @@ export class SettingsPanel {
   }
 
   private renderRows(): void {
+    this.rows[0].setText(this.difficultyText());
     OPTIONS.forEach((option, index) => {
-      this.rows[index].setText(this.rowText(option));
+      this.rows[index + 1].setText(this.rowText(option));
     });
+  }
+
+  private difficultyText(): string {
+    return `Difficulty: ${difficultyLabel(this.settings.difficulty)}`;
   }
 
   private rowText(option: SettingOption): string {

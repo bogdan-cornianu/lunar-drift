@@ -83,6 +83,16 @@ describe('createPowerUpSpawns', () => {
       expect(bad?.kind).not.toBe('pad-blackout');
     }
   });
+
+  it('delays bad pickups on Easy while keeping Normal unchanged', () => {
+    const easySpawns = createPowerUpSpawns({ seed: 123, site: 2, pads, surfaceYAt }, 'easy');
+    const normalSpawns = createPowerUpSpawns({ seed: 123, site: 2, pads, surfaceYAt }, 'normal');
+
+    expect(easySpawns).toHaveLength(1);
+    expect(easySpawns[0].polarity).toBe('good');
+    expect(normalSpawns).toHaveLength(2);
+    expect(normalSpawns.map((spawn) => spawn.polarity).sort()).toEqual(['bad', 'good']);
+  });
 });
 
 describe('power-up effects', () => {

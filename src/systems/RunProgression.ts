@@ -7,10 +7,16 @@ import {
   ROUGH_LANDING_REFUEL,
   STANDARD_LANDING_REFUEL,
 } from '../config';
+import {
+  DEFAULT_DIFFICULTY,
+  DifficultyLevel,
+  getDifficultyProfile,
+} from './Difficulty';
 import { LandingGrade } from './Scoring';
 
 export interface SiteDifficulty {
   site: number;
+  difficulty: DifficultyLevel;
   terrainRoughness: number;
   padWidthScale: number;
   windX: number;
@@ -39,16 +45,31 @@ export class RunProgression {
   streak = 0;
   objective: Objective = { kind: 'safe', label: 'LAND SAFELY' };
 
+  constructor(private difficulty: DifficultyLevel = DEFAULT_DIFFICULTY) {}
+
   getDifficulty(): SiteDifficulty {
+    const profile = getDifficultyProfile(this.difficulty);
     const tier = Math.max(0, this.site - 1);
     const windDirection = this.site % 2 === 0 ? 1 : -1;
-    const windMagnitude = this.site < 4 ? 0 : Math.min(MAX_WIND, 4 + tier * 1.6);
+    const windMagnitude =
+      this.site < profile.windStartSite
+        ? 0
+        : Math.min(MAX_WIND, (4 + tier * 1.6) * profile.windScale);
     const windX = windMagnitude === 0 ? 0 : windDirection * windMagnitude;
+    const terrainRoughness = Math.min(
+      MAX_TERRAIN_ROUGHNESS,
+      (0.56 + tier * 0.035) * profile.terrainRoughnessScale,
+    );
+    const padWidthScale = Math.max(
+      MIN_PAD_WIDTH_SCALE,
+      (1 - tier * 0.035) * profile.padWidthScale,
+    );
 
     return {
       site: this.site,
-      terrainRoughness: Math.min(MAX_TERRAIN_ROUGHNESS, 0.56 + tier * 0.035),
-      padWidthScale: Math.max(MIN_PAD_WIDTH_SCALE, 1 - tier * 0.035),
+      difficulty: this.difficulty,
+      terrainRoughness,
+      padWidthScale,
       windX,
     };
   }
@@ -77,18 +98,25 @@ export class RunProgression {
   }
 
   private makeObjective(seed: number): Objective {
+    const profile = getDifficultyProfile(this.difficulty);
     if (this.site <= 2) return { kind: 'safe', label: 'LAND SAFELY' };
 
     const choice = (seed + this.site) % 3;
     if (choice === 0) {
-      const fuelMin = this.site < 6 ? 40 : 50;
+      const fuelMin = Math.max(
+        20,
+        (this.site < 6 ? 40 : 50) + profile.objectiveFuelAdjustment,
+      );
       return { kind: 'fuel', label: `LAND WITH ${fuelMin}+ FUEL`, fuelMin };
     }
     if (choice === 1) {
       const multiplierMin = this.site < 5 ? 5 : 10;
       return { kind: 'pad', label: `LAND ON ${multiplierMin}X PAD`, multiplierMin };
     }
-    const vyMax = this.site < 7 ? 20 : 16;
+    const vyMax = Math.max(
+      10,
+      (this.site < 7 ? 20 : 16) + profile.objectiveGentleVyAdjustment,
+    );
     return { kind: 'gentle', label: `TOUCH DOWN VY <= ${vyMax}`, vyMax };
   }
 
@@ -100,9 +128,18 @@ export class RunProgression {
   }
 
   private refuelRatio(grade: LandingGrade, objectiveMet: boolean): number {
+    const profile = getDifficultyProfile(this.difficulty);
     const objectiveBoost = objectiveMet ? 0.08 : 0;
     if (grade === 'PERFECT') return CLEAN_LANDING_REFUEL;
-    if (grade === 'GOOD') return Math.min(1, STANDARD_LANDING_REFUEL + objectiveBoost);
-    return Math.min(1, ROUGH_LANDING_REFUEL + objectiveBoost);
+    if (grade === 'GOOD') {
+      return Math.min(
+        1,
+        Math.max(0, STANDARD_LANDING_REFUEL + objectiveBoost + profile.refuelAdjustment),
+      );
+    }
+    return Math.min(
+      1,
+      Math.max(0, ROUGH_LANDING_REFUEL + objectiveBoost + profile.refuelAdjustment),
+    );
   }
 }

@@ -3,15 +3,16 @@ import {
   FUEL_MAX,
   GAME_HEIGHT,
   GAME_WIDTH,
-  SAFE_ANGLE_DEG,
-  SAFE_VX,
-  SAFE_VY,
-  STARTING_LIVES,
 } from '../config';
 import { Lander } from '../entities/Lander';
 import { PowerUpPickup } from '../entities/PowerUpPickup';
 import { Terrain, PadInfo } from '../entities/Terrain';
 import { Controls } from '../systems/Controls';
+import {
+  DEFAULT_DIFFICULTY,
+  DifficultyLevel,
+  getDifficultyProfile,
+} from '../systems/Difficulty';
 import { isHighScore } from '../systems/HighScores';
 import { Hud } from '../systems/Hud';
 import {
@@ -32,7 +33,7 @@ import {
   PowerUpEffectKind,
 } from '../systems/PowerUps';
 import { RunProgression } from '../systems/RunProgression';
-import { computeLandingScore } from '../systems/Scoring';
+import { computeLandingScore, getLandingLimits } from '../systems/Scoring';
 import { GameSettings, loadSettings } from '../systems/Settings';
 import { SettingsPanel } from '../ui/SettingsPanel';
 
@@ -46,11 +47,12 @@ export class GameScene extends Phaser.Scene {
   private progression = new RunProgression();
 
   private score = 0;
-  private lives = STARTING_LIVES;
+  private lives = getDifficultyProfile(DEFAULT_DIFFICULTY).lives;
   private state: GameState = 'flying';
   private currentSeed = 0;
   private nextFuel = FUEL_MAX;
   private settings: GameSettings = loadSettings();
+  private runDifficulty: DifficultyLevel = DEFAULT_DIFFICULTY;
   private pauseState: PauseState = createPauseState();
   private pauseOverlay: Phaser.GameObjects.Container | null = null;
   private settingsPanel: SettingsPanel | null = null;
@@ -67,9 +69,12 @@ export class GameScene extends Phaser.Scene {
 
     this.spawnStars();
 
+    this.settings = loadSettings();
+    this.runDifficulty = this.settings.difficulty;
+
     this.controls = new Controls(this);
     this.terrain = new Terrain(this);
-    this.progression = new RunProgression();
+    this.progression = new RunProgression(this.runDifficulty);
     this.pauseState = resetPauseState();
     this.clearPauseUi();
     this.physics.world.resume();
@@ -79,7 +84,7 @@ export class GameScene extends Phaser.Scene {
 
     this.lander = new Lander(this, GAME_WIDTH / 2, 60);
     this.lander.setWind(this.progression.getDifficulty().windX);
-    this.settings = loadSettings();
+    this.lander.setFuelBurnScale(getDifficultyProfile(this.runDifficulty).fuelBurnScale);
     this.applySettings();
 
     this.hud = new Hud(this);
@@ -87,7 +92,7 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => this.handleEscape());
 
     this.score = 0;
-    this.lives = STARTING_LIVES;
+    this.lives = getDifficultyProfile(this.runDifficulty).lives;
     this.nextFuel = FUEL_MAX;
     this.state = 'flying';
     this.collectedPowerUps.clear();
@@ -157,8 +162,9 @@ export class GameScene extends Phaser.Scene {
     const vx = body.velocity.x;
     const vy = body.velocity.y;
     const angleDeg = this.normalizedAngleDeg();
-    const upright = Math.abs(angleDeg) <= SAFE_ANGLE_DEG;
-    const slow = Math.abs(vx) <= SAFE_VX && Math.abs(vy) <= SAFE_VY;
+    const landingLimits = getLandingLimits(this.runDifficulty);
+    const upright = Math.abs(angleDeg) <= landingLimits.safeAngleDeg;
+    const slow = Math.abs(vx) <= landingLimits.safeVx && Math.abs(vy) <= landingLimits.safeVy;
     const padOnline = pad
       ? canLandOnPad(
           pad.hazard,
@@ -171,30 +177,36 @@ export class GameScene extends Phaser.Scene {
     if (pad && padOnline && upright && slow) {
       this.snapLanderToTerrain();
       this.lander.settle();
-      const provisional = computeLandingScore({
-        multiplier: pad.multiplier,
-        fuelRemaining: this.lander.fuel,
-        vx,
-        vy,
-        angleDeg,
-        streak: this.progression.streak,
-        objectiveMet: false,
-      });
+      const provisional = computeLandingScore(
+        {
+          multiplier: pad.multiplier,
+          fuelRemaining: this.lander.fuel,
+          vx,
+          vy,
+          angleDeg,
+          streak: this.progression.streak,
+          objectiveMet: false,
+        },
+        this.runDifficulty,
+      );
       const outcome = this.progression.resolveLanding({
         grade: provisional.grade,
         fuelRemaining: this.lander.fuel,
         multiplier: pad.multiplier,
         vy,
       });
-      const scoreResult = computeLandingScore({
-        multiplier: pad.multiplier,
-        fuelRemaining: this.lander.fuel,
-        vx,
-        vy,
-        angleDeg,
-        streak: this.progression.streak - 1,
-        objectiveMet: outcome.objectiveMet,
-      });
+      const scoreResult = computeLandingScore(
+        {
+          multiplier: pad.multiplier,
+          fuelRemaining: this.lander.fuel,
+          vx,
+          vy,
+          angleDeg,
+          streak: this.progression.streak - 1,
+          objectiveMet: outcome.objectiveMet,
+        },
+        this.runDifficulty,
+      );
       const gained = scoreResult.total;
       this.score += gained;
       this.nextFuel = outcome.nextFuel;
@@ -237,12 +249,15 @@ export class GameScene extends Phaser.Scene {
     for (const powerUp of this.powerUps) powerUp.destroy();
     this.powerUps = [];
 
-    const spawns = createPowerUpSpawns({
-      seed: this.currentSeed,
-      site: this.progression.site,
-      pads: this.terrain.getPads(),
-      surfaceYAt: (x) => this.terrain.surfaceYAt(x),
-    }).filter((spawn) => !this.collectedPowerUps.has(this.powerUpKey(spawn.polarity)));
+    const spawns = createPowerUpSpawns(
+      {
+        seed: this.currentSeed,
+        site: this.progression.site,
+        pads: this.terrain.getPads(),
+        surfaceYAt: (x) => this.terrain.surfaceYAt(x),
+      },
+      this.runDifficulty,
+    ).filter((spawn) => !this.collectedPowerUps.has(this.powerUpKey(spawn.polarity)));
 
     this.powerUps = spawns.map((spawn) => new PowerUpPickup(this, spawn));
   }
@@ -339,6 +354,7 @@ export class GameScene extends Phaser.Scene {
     const difficulty = this.progression.getDifficulty();
     this.terrain.regenerate(this.currentSeed, difficulty, this.time.now);
     this.lander.setWind(difficulty.windX);
+    this.lander.setFuelBurnScale(getDifficultyProfile(this.runDifficulty).fuelBurnScale);
     this.lander.reset(GAME_WIDTH / 2, 60, this.nextFuel);
     this.applySettings();
     this.spawnPowerUps();
@@ -347,11 +363,17 @@ export class GameScene extends Phaser.Scene {
 
   private endGame(): void {
     this.state = 'gameover';
-    if (isHighScore(this.score)) {
-      this.scene.start('NewHighScoreScene', { score: this.score });
+    if (isHighScore(this.score, this.runDifficulty)) {
+      this.scene.start('NewHighScoreScene', {
+        score: this.score,
+        difficulty: this.runDifficulty,
+      });
       return;
     }
-    this.scene.start('GameOverScene', { score: this.score });
+    this.scene.start('GameOverScene', {
+      score: this.score,
+      difficulty: this.runDifficulty,
+    });
   }
 
   private makeSeed(): number {

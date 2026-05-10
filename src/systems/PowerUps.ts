@@ -1,5 +1,10 @@
 import { FUEL_MAX, GAME_WIDTH } from '../config';
 import { mulberry32 } from '../utils/midpointDisplacement';
+import {
+  DEFAULT_DIFFICULTY,
+  DifficultyLevel,
+  getDifficultyProfile,
+} from './Difficulty';
 
 export type PowerUpKind = 'fuel' | 'stabilizer' | 'hazard-sync';
 export type BadPowerUpKind = 'fuel-leak' | 'destabilizer' | 'pad-blackout';
@@ -46,7 +51,6 @@ export const FUEL_LEAK_DRAIN = 25;
 export const HAZARD_SYNC_DURATION_MS = 4000;
 
 const FIRST_POWER_UP_SITE = 2;
-const HAZARD_SYNC_START_SITE = 3;
 const MIN_X = 60;
 const MAX_X = GAME_WIDTH - 60;
 const PAD_CLEARANCE = 24;
@@ -55,13 +59,20 @@ const DESCENT_CORRIDOR_HALF_WIDTH = 145;
 const PAIR_MIN_DISTANCE = 64;
 const PAIR_MAX_DISTANCE = 96;
 
-export function createPowerUpSpawn(input: PowerUpSpawnInput): PowerUpSpawn | null {
-  return createLegacyWidePowerUpSpawn(input);
+export function createPowerUpSpawn(
+  input: PowerUpSpawnInput,
+  difficulty: DifficultyLevel = DEFAULT_DIFFICULTY,
+): PowerUpSpawn | null {
+  return createLegacyWidePowerUpSpawn(input, difficulty);
 }
 
-export function createPowerUpSpawns(input: PowerUpSpawnInput): PowerUpSpawn[] {
+export function createPowerUpSpawns(
+  input: PowerUpSpawnInput,
+  difficulty: DifficultyLevel = DEFAULT_DIFFICULTY,
+): PowerUpSpawn[] {
   if (input.site < FIRST_POWER_UP_SITE) return [];
 
+  const profile = getDifficultyProfile(difficulty);
   const rand = mulberry32(input.seed ^ input.site ^ 0x5f3759df);
   const centerX = DESCENT_CENTER_X + (rand() - 0.5) * DESCENT_CORRIDOR_HALF_WIDTH * 1.1;
   const distance = PAIR_MIN_DISTANCE + rand() * (PAIR_MAX_DISTANCE - PAIR_MIN_DISTANCE);
@@ -79,15 +90,19 @@ export function createPowerUpSpawns(input: PowerUpSpawnInput): PowerUpSpawn[] {
     DESCENT_CENTER_X + DESCENT_CORRIDOR_HALF_WIDTH,
   );
 
+  const good: PowerUpSpawn = {
+    kind: choosePowerUpKind(input.site, rand(), difficulty),
+    polarity: 'good',
+    x: goodFirst ? leftX : rightX,
+    y,
+  };
+
+  if (input.site < profile.badPickupStartSite) return [good];
+
   return [
+    good,
     {
-      kind: choosePowerUpKind(input.site, rand()),
-      polarity: 'good',
-      x: goodFirst ? leftX : rightX,
-      y,
-    },
-    {
-      kind: chooseBadPowerUpKind(input.site, rand()),
+      kind: chooseBadPowerUpKind(input.site, rand(), difficulty),
       polarity: 'bad',
       x: goodFirst ? rightX : leftX,
       y: y + Math.round((rand() - 0.5) * 24),
@@ -95,7 +110,10 @@ export function createPowerUpSpawns(input: PowerUpSpawnInput): PowerUpSpawn[] {
   ];
 }
 
-export function createLegacyWidePowerUpSpawn(input: PowerUpSpawnInput): PowerUpSpawn | null {
+export function createLegacyWidePowerUpSpawn(
+  input: PowerUpSpawnInput,
+  difficulty: DifficultyLevel = DEFAULT_DIFFICULTY,
+): PowerUpSpawn | null {
   if (input.site < FIRST_POWER_UP_SITE) return null;
   const rand = mulberry32(input.seed ^ input.site ^ 0x5f3759df);
   const range = chooseSpawnRange(input.pads, rand);
@@ -104,7 +122,7 @@ export function createLegacyWidePowerUpSpawn(input: PowerUpSpawnInput): PowerUpS
   const x = Math.round(range.start + rand() * (range.end - range.start));
   const altitude = 120 + rand() * 70;
   return {
-    kind: choosePowerUpKind(input.site, rand()),
+    kind: choosePowerUpKind(input.site, rand(), difficulty),
     polarity: 'good',
     x,
     y: Math.max(80, Math.round(input.surfaceYAt(x) - altitude)),
@@ -145,15 +163,25 @@ export function isHazardSyncActive(startTimeMs: number | null, nowMs: number): b
   );
 }
 
-function choosePowerUpKind(site: number, roll: number): PowerUpKind {
-  if (site < HAZARD_SYNC_START_SITE) return roll < 0.55 ? 'fuel' : 'stabilizer';
+function choosePowerUpKind(
+  site: number,
+  roll: number,
+  difficulty: DifficultyLevel,
+): PowerUpKind {
+  const hazardStartSite = getDifficultyProfile(difficulty).hazardStartSite;
+  if (site < hazardStartSite) return roll < 0.55 ? 'fuel' : 'stabilizer';
   if (roll < 0.42) return 'fuel';
   if (roll < 0.78) return 'stabilizer';
   return 'hazard-sync';
 }
 
-function chooseBadPowerUpKind(site: number, roll: number): BadPowerUpKind {
-  if (site < HAZARD_SYNC_START_SITE) return roll < 0.55 ? 'fuel-leak' : 'destabilizer';
+function chooseBadPowerUpKind(
+  site: number,
+  roll: number,
+  difficulty: DifficultyLevel,
+): BadPowerUpKind {
+  const hazardStartSite = getDifficultyProfile(difficulty).hazardStartSite;
+  if (site < hazardStartSite) return roll < 0.55 ? 'fuel-leak' : 'destabilizer';
   if (roll < 0.42) return 'fuel-leak';
   if (roll < 0.78) return 'destabilizer';
   return 'pad-blackout';

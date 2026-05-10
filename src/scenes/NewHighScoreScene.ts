@@ -1,6 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config';
 import {
+  DEFAULT_DIFFICULTY,
+  difficultyLabel,
+  DifficultyLevel,
+} from '../systems/Difficulty';
+import {
   HIGH_SCORE_NAME_MAX_LENGTH,
   normalizeHighScoreName,
   saveHighScore,
@@ -8,6 +13,7 @@ import {
 
 interface NewHighScoreData {
   score: number;
+  difficulty?: DifficultyLevel;
 }
 
 const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
@@ -18,6 +24,7 @@ const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
 
 export class NewHighScoreScene extends Phaser.Scene {
   private score = 0;
+  private difficulty: DifficultyLevel = DEFAULT_DIFFICULTY;
   private nameValue = '';
   private nameText!: Phaser.GameObjects.Text;
 
@@ -27,6 +34,7 @@ export class NewHighScoreScene extends Phaser.Scene {
 
   create(data: NewHighScoreData): void {
     this.score = Math.max(0, Math.floor(data.score ?? 0));
+    this.difficulty = data.difficulty ?? DEFAULT_DIFFICULTY;
     this.nameValue = '';
     this.cameras.main.setBackgroundColor('#05070d');
     this.spawnStars();
@@ -46,6 +54,14 @@ export class NewHighScoreScene extends Phaser.Scene {
       .text(cx, cy - 86, `FINAL SCORE  ${this.score}`, {
         ...TEXT_STYLE,
         fontSize: '22px',
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(cx, cy - 58, difficultyLabel(this.difficulty).toUpperCase(), {
+        ...TEXT_STYLE,
+        fontSize: '14px',
+        color: '#a9b3c1',
       })
       .setOrigin(0.5);
 
@@ -110,12 +126,16 @@ export class NewHighScoreScene extends Phaser.Scene {
       name: normalizeHighScoreName(this.nameValue),
       score: this.score,
       timestamp: Date.now(),
+    }, this.difficulty);
+    this.scene.start('HighScoresScene', {
+      returnScene: 'GameOverScene',
+      score: this.score,
+      difficulty: this.difficulty,
     });
-    this.scene.start('HighScoresScene', { returnScene: 'GameOverScene', score: this.score });
   }
 
   private cancel(): void {
-    this.scene.start('GameOverScene', { score: this.score });
+    this.scene.start('GameOverScene', { score: this.score, difficulty: this.difficulty });
   }
 
   private refreshName(): void {

@@ -32,6 +32,29 @@ describe('createPadHazard', () => {
     expect(getPadHazardState(hazard, 0)).toBe('online');
     expect(getPadHazardState(hazard, 2000)).toBe('online');
   });
+
+  it('adjusts hazard pressure by difficulty', () => {
+    const earlyHard = createPadHazard(
+      { seed: 7, site: 2, multiplier: 10, padIndex: 2 },
+      'hard',
+    );
+    const earlyNormal = createPadHazard(
+      { seed: 7, site: 2, multiplier: 10, padIndex: 2 },
+      'normal',
+    );
+    const easySiteThree = createPadHazard(
+      { seed: 7, site: 3, multiplier: 10, padIndex: 2 },
+      'easy',
+    );
+
+    expect(earlyHard.kind).toBe('unstable');
+    expect(earlyNormal.kind).toBe('stable');
+    expect(easySiteThree.kind).toBe('stable');
+    if (earlyHard.kind === 'unstable') {
+      expect(earlyHard.warningStartsAtMs).toBeGreaterThan(0);
+      expect(earlyHard.offlineDurationMs).toBeGreaterThan(1800);
+    }
+  });
 });
 
 describe('getPadHazardState', () => {

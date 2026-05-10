@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_DIFFICULTY, DifficultyLevel } from './Difficulty';
 import {
   DEFAULT_SETTINGS,
   GameSettings,
@@ -46,6 +47,7 @@ describe('settings storage', () => {
   it('saves and loads settings', () => {
     const storage = new MemoryStorage();
     const settings: GameSettings = {
+      difficulty: 'hard',
       screenShake: false,
       reducedMotion: true,
       exhaustParticles: false,
@@ -61,5 +63,26 @@ describe('settings storage', () => {
 
     expect(next.reducedMotion).toBe(true);
     expect(DEFAULT_SETTINGS.reducedMotion).toBe(false);
+  });
+
+  it('defaults difficulty to normal for old saved settings', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ screenShake: false }));
+
+    expect(loadSettings(storage).difficulty).toBe(DEFAULT_DIFFICULTY);
+  });
+
+  it('normalizes invalid difficulty values', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ difficulty: 'nightmare' }));
+
+    expect(loadSettings(storage).difficulty).toBe(DEFAULT_DIFFICULTY);
+  });
+
+  it('updates difficulty without mutating the source object', () => {
+    const next = updateSetting(DEFAULT_SETTINGS, 'difficulty', 'easy' satisfies DifficultyLevel);
+
+    expect(next.difficulty).toBe('easy');
+    expect(DEFAULT_SETTINGS.difficulty).toBe('normal');
   });
 });

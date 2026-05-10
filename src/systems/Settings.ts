@@ -1,4 +1,11 @@
+import {
+  DEFAULT_DIFFICULTY,
+  DifficultyLevel,
+  isDifficultyLevel,
+} from './Difficulty';
+
 export interface GameSettings {
+  difficulty: DifficultyLevel;
   screenShake: boolean;
   reducedMotion: boolean;
   exhaustParticles: boolean;
@@ -14,6 +21,7 @@ export interface StorageLike {
 export const SETTINGS_STORAGE_KEY = 'lunar-drift-settings';
 
 export const DEFAULT_SETTINGS: GameSettings = {
+  difficulty: DEFAULT_DIFFICULTY,
   screenShake: true,
   reducedMotion: false,
   exhaustParticles: true,
@@ -40,13 +48,16 @@ export function saveSettings(settings: GameSettings, storage = browserStorage())
 export function updateSetting(
   settings: GameSettings,
   key: SettingKey,
-  value: boolean,
+  value: GameSettings[SettingKey],
 ): GameSettings {
   return { ...settings, [key]: value };
 }
 
 function normalizeSettings(input: Partial<GameSettings>): GameSettings {
   return {
+    difficulty: isDifficultyLevel(input.difficulty)
+      ? input.difficulty
+      : DEFAULT_SETTINGS.difficulty,
     screenShake: typeof input.screenShake === 'boolean' ? input.screenShake : DEFAULT_SETTINGS.screenShake,
     reducedMotion:
       typeof input.reducedMotion === 'boolean' ? input.reducedMotion : DEFAULT_SETTINGS.reducedMotion,

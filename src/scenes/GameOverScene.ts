@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config';
+import { difficultyLabel, DifficultyLevel } from '../systems/Difficulty';
 import { GAME_OVER_ACTIONS, GameOverActionId, sceneForGameOverAction } from '../systems/GameOverActions';
 
 interface GameOverData {
   score: number;
+  difficulty?: DifficultyLevel;
 }
 
 export class GameOverScene extends Phaser.Scene {
@@ -32,8 +34,18 @@ export class GameOverScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    if (data.difficulty) {
+      this.add
+        .text(cx, cy + 22, difficultyLabel(data.difficulty).toUpperCase(), {
+          fontFamily: 'monospace',
+          fontSize: '14px',
+          color: '#a9b3c1',
+        })
+        .setOrigin(0.5);
+    }
+
     GAME_OVER_ACTIONS.forEach((action, index) => {
-      this.addButton(cx, cy + 52 + index * 46, action.label, () => this.runAction(action.id));
+      this.addButton(cx, cy + 64 + index * 46, action.label, () => this.runAction(action.id));
     });
 
     this.input.keyboard?.once('keydown-R', () => {

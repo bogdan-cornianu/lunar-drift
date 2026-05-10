@@ -33,13 +33,13 @@ function entry(name: string, score: number, timestamp: number) {
 describe('HighScores', () => {
   it('falls back to an empty leaderboard for missing or malformed storage', () => {
     const storage = new MemoryStorage();
-    expect(loadHighScores(storage)).toEqual([]);
+    expect(loadHighScores('normal', storage)).toEqual([]);
 
     storage.setItem(HIGH_SCORES_STORAGE_KEY, '{bad json');
-    expect(loadHighScores(storage)).toEqual([]);
+    expect(loadHighScores('normal', storage)).toEqual([]);
 
     storage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify({ score: 100 }));
-    expect(loadHighScores(storage)).toEqual([]);
+    expect(loadHighScores('normal', storage)).toEqual([]);
   });
 
   it('normalizes names for display and storage', () => {
@@ -51,28 +51,28 @@ describe('HighScores', () => {
   it('qualifies scores while the table has fewer than ten entries', () => {
     const storage = new MemoryStorage();
     for (let i = 0; i < HIGH_SCORE_LIMIT - 1; i++) {
-      saveHighScore(entry(`P${i}`, i, i), storage);
+      saveHighScore(entry(`P${i}`, i, i), 'normal', storage);
     }
 
-    expect(isHighScore(0, storage)).toBe(true);
+    expect(isHighScore(0, 'normal', storage)).toBe(true);
   });
 
   it('qualifies scores that beat or tie the final top-ten entry', () => {
     const storage = new MemoryStorage();
     for (let i = 0; i < HIGH_SCORE_LIMIT; i++) {
-      saveHighScore(entry(`P${i}`, 100 - i, i), storage);
+      saveHighScore(entry(`P${i}`, 100 - i, i), 'normal', storage);
     }
 
-    expect(isHighScore(91, storage)).toBe(true);
-    expect(isHighScore(90, storage)).toBe(false);
+    expect(isHighScore(91, 'normal', storage)).toBe(true);
+    expect(isHighScore(90, 'normal', storage)).toBe(false);
   });
 
   it('sorts by score descending, breaks ties by newest first, and trims to ten', () => {
     const storage = new MemoryStorage();
     for (let i = 0; i < HIGH_SCORE_LIMIT; i++) {
-      saveHighScore(entry(`P${i}`, 100 - i, i), storage);
+      saveHighScore(entry(`P${i}`, 100 - i, i), 'normal', storage);
     }
-    const scores = saveHighScore(entry('NEW', 95, 99), storage);
+    const scores = saveHighScore(entry('NEW', 95, 99), 'normal', storage);
 
     expect(scores).toHaveLength(HIGH_SCORE_LIMIT);
     expect(scores.map((score) => score.score)).toEqual([100, 99, 98, 97, 96, 95, 95, 94, 93, 92]);
@@ -81,9 +81,40 @@ describe('HighScores', () => {
 
   it('clears stored high scores', () => {
     const storage = new MemoryStorage();
-    saveHighScore(entry('ACE', 200, 1), storage);
-    clearHighScores(storage);
+    saveHighScore(entry('ACE', 200, 1), 'normal', storage);
+    clearHighScores('normal', storage);
 
-    expect(loadHighScores(storage)).toEqual([]);
+    expect(loadHighScores('normal', storage)).toEqual([]);
+  });
+
+  it('stores separate score tables per difficulty', () => {
+    const storage = new MemoryStorage();
+
+    saveHighScore(entry('EASY', 100, 1), 'easy', storage);
+    saveHighScore(entry('HARD', 300, 2), 'hard', storage);
+
+    expect(loadHighScores('easy', storage).map((score) => score.name)).toEqual(['EASY']);
+    expect(loadHighScores('normal', storage)).toEqual([]);
+    expect(loadHighScores('hard', storage).map((score) => score.name)).toEqual(['HARD']);
+    expect(isHighScore(250, 'hard', storage)).toBe(true);
+  });
+
+  it('loads legacy score arrays as the normal leaderboard only', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify([entry('OLD', 150, 1)]));
+
+    expect(loadHighScores('normal', storage).map((score) => score.name)).toEqual(['OLD']);
+    expect(loadHighScores('easy', storage)).toEqual([]);
+  });
+
+  it('clears only the selected difficulty table', () => {
+    const storage = new MemoryStorage();
+    saveHighScore(entry('EASY', 100, 1), 'easy', storage);
+    saveHighScore(entry('HARD', 300, 2), 'hard', storage);
+
+    clearHighScores('easy', storage);
+
+    expect(loadHighScores('easy', storage)).toEqual([]);
+    expect(loadHighScores('hard', storage).map((score) => score.name)).toEqual(['HARD']);
   });
 });
