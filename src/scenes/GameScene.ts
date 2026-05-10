@@ -9,6 +9,7 @@ import {
   STARTING_LIVES,
 } from '../config';
 import { Lander } from '../entities/Lander';
+import { PowerUpPickup } from '../entities/PowerUpPickup';
 import { Terrain, PadInfo } from '../entities/Terrain';
 import { Controls } from '../systems/Controls';
 import { isHighScore } from '../systems/HighScores';
@@ -21,6 +22,15 @@ import {
   resumeState,
 } from '../systems/PauseState';
 import { canLandOnPad } from '../systems/PadHazards';
+import {
+  applyDestabilizer,
+  applyFuelCell,
+  applyFuelLeak,
+  applyStabilizerBurst,
+  createPowerUpSpawns,
+  HAZARD_SYNC_DURATION_MS,
+  PowerUpEffectKind,
+} from '../systems/PowerUps';
 import { RunProgression } from '../systems/RunProgression';
 import { computeLandingScore } from '../systems/Scoring';
 import { GameSettings, loadSettings } from '../systems/Settings';
@@ -44,6 +54,8 @@ export class GameScene extends Phaser.Scene {
   private pauseState: PauseState = createPauseState();
   private pauseOverlay: Phaser.GameObjects.Container | null = null;
   private settingsPanel: SettingsPanel | null = null;
+  private powerUps: PowerUpPickup[] = [];
+  private collectedPowerUps = new Set<string>();
 
   constructor() {
     super('GameScene');
@@ -78,6 +90,8 @@ export class GameScene extends Phaser.Scene {
     this.lives = STARTING_LIVES;
     this.nextFuel = FUEL_MAX;
     this.state = 'flying';
+    this.collectedPowerUps.clear();
+    this.spawnPowerUps();
   }
 
   override update(time: number, delta: number): void {
@@ -87,6 +101,7 @@ export class GameScene extends Phaser.Scene {
     this.lander.update(time, delta);
 
     if (this.state === 'flying') {
+      this.checkPowerUpContact();
       this.checkTerrainContact();
     }
 
@@ -144,7 +159,14 @@ export class GameScene extends Phaser.Scene {
     const angleDeg = this.normalizedAngleDeg();
     const upright = Math.abs(angleDeg) <= SAFE_ANGLE_DEG;
     const slow = Math.abs(vx) <= SAFE_VX && Math.abs(vy) <= SAFE_VY;
-    const padOnline = pad ? canLandOnPad(pad.hazard, this.time.now) : false;
+    const padOnline = pad
+      ? canLandOnPad(
+          pad.hazard,
+          this.time.now,
+          this.terrain.isHazardSyncActive(this.time.now),
+          this.terrain.isPadDisabled(pad),
+        )
+      : false;
 
     if (pad && padOnline && upright && slow) {
       this.snapLanderToTerrain();
@@ -211,6 +233,101 @@ export class GameScene extends Phaser.Scene {
     if (penetration > 0) this.lander.y -= penetration;
   }
 
+  private spawnPowerUps(): void {
+    for (const powerUp of this.powerUps) powerUp.destroy();
+    this.powerUps = [];
+
+    const spawns = createPowerUpSpawns({
+      seed: this.currentSeed,
+      site: this.progression.site,
+      pads: this.terrain.getPads(),
+      surfaceYAt: (x) => this.terrain.surfaceYAt(x),
+    }).filter((spawn) => !this.collectedPowerUps.has(this.powerUpKey(spawn.polarity)));
+
+    this.powerUps = spawns.map((spawn) => new PowerUpPickup(this, spawn));
+  }
+
+  private checkPowerUpContact(): void {
+    for (const powerUp of [...this.powerUps]) {
+      if (!powerUp.active) continue;
+      const distance = Phaser.Math.Distance.Between(
+        this.lander.x,
+        this.lander.y,
+        powerUp.x,
+        powerUp.y,
+      );
+      if (distance <= 30) this.collectPowerUp(powerUp);
+    }
+  }
+
+  private collectPowerUp(powerUp: PowerUpPickup): void {
+    const { kind, x, y } = powerUp;
+    this.collectedPowerUps.add(this.powerUpKey(powerUp.polarity));
+    this.powerUps = this.powerUps.filter((candidate) => candidate !== powerUp);
+    powerUp.destroy();
+
+    this.applyPowerUp(kind, x);
+    this.playPowerUpBurst(x, y, kind);
+  }
+
+  private applyPowerUp(kind: PowerUpEffectKind, x: number): void {
+    if (kind === 'fuel') {
+      this.lander.fuel = applyFuelCell(this.lander.fuel);
+      this.hud.showToast(this, 'FUEL +25', '#ffd166');
+      return;
+    }
+
+    if (kind === 'stabilizer') {
+      const body = this.lander.body as Phaser.Physics.Arcade.Body;
+      const stabilized = applyStabilizerBurst({
+        vx: body.velocity.x,
+        vy: body.velocity.y,
+        rotationRad: this.lander.rotation,
+      });
+      this.lander.setVelocity(stabilized.vx, stabilized.vy);
+      this.lander.setAngularVelocity(stabilized.angularVelocity);
+      this.lander.setRotation(stabilized.rotationRad);
+      this.hud.showToast(this, 'STABILIZED', '#6affd9');
+      return;
+    }
+
+    if (kind === 'hazard-sync') {
+      this.terrain.applyHazardSync(this.time.now, HAZARD_SYNC_DURATION_MS);
+      this.hud.showToast(this, 'PADS SYNCED', '#d8c2ff');
+      return;
+    }
+
+    if (kind === 'fuel-leak') {
+      this.lander.fuel = applyFuelLeak(this.lander.fuel);
+      this.hud.showToast(this, 'FUEL LEAK', '#ff5677');
+      return;
+    }
+
+    if (kind === 'destabilizer') {
+      const body = this.lander.body as Phaser.Physics.Arcade.Body;
+      const destabilized = applyDestabilizer({
+        vx: body.velocity.x,
+        vy: body.velocity.y,
+        rotationRad: this.lander.rotation,
+      });
+      this.lander.setVelocity(destabilized.vx, destabilized.vy);
+      this.lander.setAngularVelocity(destabilized.angularVelocity);
+      this.lander.setRotation(destabilized.rotationRad);
+      this.hud.showToast(this, 'DESTABILIZED', '#ff8c42');
+      if (this.settings.screenShake && !this.settings.reducedMotion) {
+        this.cameras.main.shake(150, 0.004);
+      }
+      return;
+    }
+
+    this.terrain.blackoutNearestPad(x);
+    this.hud.showToast(this, 'PAD BLACKOUT', '#ff2d55');
+  }
+
+  private powerUpKey(polarity: string): string {
+    return `${this.progression.site}:${this.currentSeed}:${polarity}`;
+  }
+
   private respawn(advance: boolean): void {
     if (advance) {
       this.progression.advanceSite();
@@ -224,6 +341,7 @@ export class GameScene extends Phaser.Scene {
     this.lander.setWind(difficulty.windX);
     this.lander.reset(GAME_WIDTH / 2, 60, this.nextFuel);
     this.applySettings();
+    this.spawnPowerUps();
     this.state = 'flying';
   }
 
@@ -250,6 +368,68 @@ export class GameScene extends Phaser.Scene {
     if (!upright) return 'TOUCHDOWN ANGLE TOO HIGH';
     if (!slow) return 'TOUCHDOWN SPEED TOO HIGH';
     return 'UNSAFE TOUCHDOWN';
+  }
+
+  private playPowerUpBurst(x: number, y: number, kind: PowerUpEffectKind): void {
+    const tint = this.powerUpTint(kind);
+    const core = this.add.circle(x, y, 8, tint, 0.85);
+    core.setBlendMode(Phaser.BlendModes.ADD);
+    core.setDepth(45);
+
+    const ring = this.add.circle(x, y, 14);
+    ring.setStrokeStyle(3, tint, 0.95);
+    ring.setBlendMode(Phaser.BlendModes.ADD);
+    ring.setDepth(44);
+
+    const duration = this.settings.reducedMotion ? 260 : 420;
+    this.tweens.add({
+      targets: core,
+      alpha: 0,
+      scale: this.settings.reducedMotion ? 1.4 : 2.1,
+      duration,
+      ease: 'Quad.easeOut',
+      onComplete: () => core.destroy(),
+    });
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      scale: this.settings.reducedMotion ? 1.6 : 3.2,
+      duration: duration + 120,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    if (this.settings.reducedMotion) return;
+
+    for (let i = 0; i < 18; i++) {
+      const particle = this.add.image(x, y, 'particle');
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 20 + Math.random() * 36;
+      particle.setBlendMode(Phaser.BlendModes.ADD);
+      particle.setDepth(43);
+      particle.setScale(1.2 + Math.random() * 1.4);
+      particle.setTint(i % 4 === 0 ? 0xffffff : tint);
+
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance,
+        alpha: 0,
+        scale: 0,
+        duration: 300 + Math.random() * 180,
+        ease: 'Quad.easeOut',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  private powerUpTint(kind: PowerUpEffectKind): number {
+    if (kind === 'fuel') return 0xffd166;
+    if (kind === 'stabilizer') return 0x6affd9;
+    if (kind === 'hazard-sync') return 0xb58cff;
+    if (kind === 'fuel-leak') return 0xff5677;
+    if (kind === 'destabilizer') return 0xff8c42;
+    return 0xff2d55;
   }
 
   private playCrashExplosion(x: number, y: number): void {
