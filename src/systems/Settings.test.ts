@@ -44,6 +44,28 @@ describe('settings storage', () => {
     });
   });
 
+  it('normalizes old stored settings with menu music off by default', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        difficulty: 'hard',
+        screenShake: false,
+        reducedMotion: true,
+        exhaustParticles: false,
+      }),
+    );
+
+    expect(loadSettings(storage)).toEqual({
+      difficulty: 'hard',
+      screenShake: false,
+      reducedMotion: true,
+      exhaustParticles: false,
+      music: false,
+      soundEffects: true,
+    });
+  });
+
   it('saves and loads settings', () => {
     const storage = new MemoryStorage();
     const settings: GameSettings = {
@@ -51,6 +73,8 @@ describe('settings storage', () => {
       screenShake: false,
       reducedMotion: true,
       exhaustParticles: false,
+      music: false,
+      soundEffects: false,
     };
 
     saveSettings(settings, storage);

@@ -13,6 +13,7 @@ import {
   DifficultyLevel,
   getDifficultyProfile,
 } from '../systems/Difficulty';
+import { getGameAudio, preferencesFromSettings } from '../systems/GameAudio';
 import { isHighScore } from '../systems/HighScores';
 import { Hud } from '../systems/Hud';
 import {
@@ -63,6 +64,7 @@ export class GameScene extends Phaser.Scene {
   private settingsPanel: SettingsPanel | null = null;
   private powerUps: PowerUpPickup[] = [];
   private collectedPowerUps = new Set<string>();
+  private audio = getGameAudio();
 
   constructor() {
     super('GameScene');
@@ -75,6 +77,8 @@ export class GameScene extends Phaser.Scene {
     this.spawnStars();
 
     this.settings = loadSettings();
+    this.audio.setPreferences(preferencesFromSettings(this.settings));
+    this.audio.enterGameplay();
     this.runDifficulty = this.settings.difficulty;
 
     this.controls = new Controls(this);
@@ -95,6 +99,8 @@ export class GameScene extends Phaser.Scene {
     this.hud = new Hud(this);
     this.input.keyboard?.off('keydown-ESC');
     this.input.keyboard?.on('keydown-ESC', () => this.handleEscape());
+    this.input.keyboard?.once('keydown', () => this.audio.unlock());
+    this.input.once('pointerdown', () => this.audio.unlock());
 
     this.score = 0;
     this.lives = getDifficultyProfile(this.runDifficulty).lives;
@@ -109,6 +115,7 @@ export class GameScene extends Phaser.Scene {
 
     this.terrain.updateHazards(time);
     this.lander.update(time, delta);
+    this.audio.setThrusting(this.isLanderThrusting());
 
     if (this.state === 'flying') {
       this.checkPowerUpContact();
@@ -176,6 +183,7 @@ export class GameScene extends Phaser.Scene {
   private onTerrainHit(pad: PadInfo | null): void {
     if (this.state !== 'flying') return;
     this.state = 'resolving';
+    this.audio.setThrusting(false);
 
     const body = this.lander.body as Phaser.Physics.Arcade.Body;
     const vx = body.velocity.x;
@@ -194,6 +202,7 @@ export class GameScene extends Phaser.Scene {
       : false;
 
     if (pad && padOnline && upright && slow) {
+      this.audio.playLanding();
       this.snapLanderToTerrain();
       this.lander.settle();
       const provisional = computeLandingScore(
@@ -241,6 +250,7 @@ export class GameScene extends Phaser.Scene {
       if (!this.settings.reducedMotion) this.cameras.main.flash(300, 40, 100, 70);
       this.time.delayedCall(1300, () => this.respawn(true));
     } else {
+      this.audio.playCrash();
       this.lives -= 1;
       this.progression.resetStreak();
       this.hud.showToast(this, this.lives > 0 ? 'CRASHED' : 'GAME OVER', '#ff5677');
@@ -301,6 +311,7 @@ export class GameScene extends Phaser.Scene {
     powerUp.destroy();
 
     this.applyPowerUp(kind, x);
+    this.audio.playPowerUp(kind);
     this.playPowerUpBurst(x, y, kind);
   }
 
@@ -382,6 +393,7 @@ export class GameScene extends Phaser.Scene {
 
   private endGame(): void {
     this.state = 'gameover';
+    this.audio.setThrusting(false);
     if (isHighScore(this.score, this.runDifficulty)) {
       this.scene.start('NewHighScoreScene', {
         score: this.score,
@@ -551,6 +563,7 @@ export class GameScene extends Phaser.Scene {
 
   private pauseGame(): void {
     if (this.pauseState.paused) return;
+    this.audio.playPause();
     this.pauseState = pauseState(this.pauseState);
     this.physics.world.pause();
     this.showPauseOverlay();
@@ -560,6 +573,7 @@ export class GameScene extends Phaser.Scene {
     this.clearPauseUi();
     this.physics.world.resume();
     this.pauseState = resumeState(this.pauseState);
+    this.audio.playResume();
   }
 
   private showPauseOverlay(): void {
@@ -592,11 +606,13 @@ export class GameScene extends Phaser.Scene {
       this.settings,
       (settings) => {
         this.settings = settings;
+        this.audio.setPreferences(preferencesFromSettings(settings));
         this.applySettings();
         this.closePauseSettings();
       },
       (settings) => {
         this.settings = settings;
+        this.audio.setPreferences(preferencesFromSettings(settings));
         this.applySettings();
       },
     );
@@ -609,6 +625,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private returnToMainMenu(): void {
+    this.audio.setThrusting(false);
     this.clearPauseUi();
     this.pauseState = resetPauseState();
     this.physics.world.resume();
@@ -645,6 +662,15 @@ export class GameScene extends Phaser.Scene {
 
   private applySettings(): void {
     this.lander.setExhaustParticlesEnabled(this.settings.exhaustParticles);
+  }
+
+  private isLanderThrusting(): boolean {
+    return (
+      this.state === 'flying' &&
+      this.lander.alive &&
+      this.lander.fuel > 0 &&
+      this.controls.isThrust()
+    );
   }
 
   private spawnStars(): void {

@@ -15,11 +15,16 @@ const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
 };
 
 interface SettingOption {
-  key: Extract<SettingKey, 'screenShake' | 'reducedMotion' | 'exhaustParticles'>;
+  key: Extract<
+    SettingKey,
+    'screenShake' | 'reducedMotion' | 'exhaustParticles' | 'music' | 'soundEffects'
+  >;
   label: string;
 }
 
 const OPTIONS: SettingOption[] = [
+  { key: 'music', label: 'Menu music' },
+  { key: 'soundEffects', label: 'Sound effects' },
   { key: 'screenShake', label: 'Screen shake' },
   { key: 'reducedMotion', label: 'Reduced motion' },
   { key: 'exhaustParticles', label: 'Exhaust particles' },
@@ -41,15 +46,15 @@ export class SettingsPanel {
 
     const cx = Number(scene.game.config.width) / 2;
     const cy = Number(scene.game.config.height) / 2;
-    this.container.add(scene.add.rectangle(cx, cy, 420, 360, 0x080c14, 0.94));
-    this.container.add(scene.add.rectangle(cx, cy, 420, 360).setStrokeStyle(2, 0x6affd9, 0.8));
+    this.container.add(scene.add.rectangle(cx, cy, 420, 430, 0x080c14, 0.94));
+    this.container.add(scene.add.rectangle(cx, cy, 420, 430).setStrokeStyle(2, 0x6affd9, 0.8));
     this.container.add(
       scene.add
-        .text(cx, cy - 145, 'SETTINGS', { ...TEXT_STYLE, fontSize: '28px', color: '#6affd9' })
+        .text(cx, cy - 178, 'SETTINGS', { ...TEXT_STYLE, fontSize: '28px', color: '#6affd9' })
         .setOrigin(0.5),
     );
 
-    const difficultyRow = this.makeButton(cx, cy - 82, this.difficultyText(), () => {
+    const difficultyRow = this.makeButton(cx, cy - 122, this.difficultyText(), () => {
       this.settings = updateSetting(
         this.settings,
         'difficulty',
@@ -63,7 +68,7 @@ export class SettingsPanel {
     this.container.add(difficultyRow);
 
     OPTIONS.forEach((option, index) => {
-      const row = this.makeButton(cx, cy - 34 + index * 48, this.rowText(option), () => {
+      const row = this.makeButton(cx, cy - 74 + index * 42, this.rowText(option), () => {
         this.settings = updateSetting(this.settings, option.key, !this.settings[option.key]);
         saveSettings(this.settings);
         this.renderRows();
@@ -73,7 +78,7 @@ export class SettingsPanel {
       this.container.add(row);
     });
 
-    this.container.add(this.makeButton(cx, cy + 132, 'BACK', () => onBack(this.settings)));
+    this.container.add(this.makeButton(cx, cy + 164, 'BACK', () => onBack(this.settings)));
   }
 
   destroy(): void {

@@ -9,6 +9,8 @@ export interface GameSettings {
   screenShake: boolean;
   reducedMotion: boolean;
   exhaustParticles: boolean;
+  music: boolean;
+  soundEffects: boolean;
 }
 
 export type SettingKey = keyof GameSettings;
@@ -25,6 +27,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   screenShake: true,
   reducedMotion: false,
   exhaustParticles: true,
+  music: false,
+  soundEffects: true,
 };
 
 export function loadSettings(storage = browserStorage()): GameSettings {
@@ -65,6 +69,11 @@ function normalizeSettings(input: Partial<GameSettings>): GameSettings {
       typeof input.exhaustParticles === 'boolean'
         ? input.exhaustParticles
         : DEFAULT_SETTINGS.exhaustParticles,
+    music: typeof input.music === 'boolean' ? input.music : DEFAULT_SETTINGS.music,
+    soundEffects:
+      typeof input.soundEffects === 'boolean'
+        ? input.soundEffects
+        : DEFAULT_SETTINGS.soundEffects,
   };
 }
 
