@@ -1,6 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config';
 import { getGameAudio, preferencesFromSettings } from '../systems/GameAudio';
+import {
+  controlHintForScheme,
+  createInputDeviceSnapshot,
+  detectInputScheme,
+} from '../systems/InputMode';
 import { loadSettings } from '../systems/Settings';
 import { SettingsPanel } from '../ui/SettingsPanel';
 
@@ -49,10 +54,19 @@ export class MenuScene extends Phaser.Scene {
         color: '#a9b3c1',
       })
       .setOrigin(0.5);
+    const inputScheme = detectInputScheme(createInputDeviceSnapshot(this.sys.game.device));
+    const controlsHint = this.add
+      .text(cx, 230, controlHintForScheme(inputScheme), {
+        ...MENU_STYLE,
+        fontSize: '12px',
+        color: '#8090a8',
+      })
+      .setOrigin(0.5);
 
     this.menuItems.push(
       title,
       subtitle,
+      controlsHint,
       this.makeButton(cx, 290, 'NEW GAME', () => this.scene.start('GameScene')),
       this.makeButton(cx, 340, 'HIGH SCORES', () =>
         this.scene.start('HighScoresScene'),

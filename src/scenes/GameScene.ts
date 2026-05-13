@@ -22,6 +22,11 @@ import {
   getLandingCueLimits,
 } from '../systems/HudState';
 import {
+  createInputDeviceSnapshot,
+  detectInputScheme,
+  InputScheme,
+} from '../systems/InputMode';
+import {
   createPauseState,
   PauseState,
   pauseState,
@@ -41,6 +46,7 @@ import {
 import { RunProgression } from '../systems/RunProgression';
 import { computeLandingScore, getLandingLimits } from '../systems/Scoring';
 import { GameSettings, loadSettings } from '../systems/Settings';
+import { TouchControlAction } from '../systems/TouchControlState';
 import { SettingsPanel } from '../ui/SettingsPanel';
 
 type GameState = 'flying' | 'resolving' | 'gameover';
@@ -62,6 +68,9 @@ export class GameScene extends Phaser.Scene {
   private pauseState: PauseState = createPauseState();
   private pauseOverlay: Phaser.GameObjects.Container | null = null;
   private settingsPanel: SettingsPanel | null = null;
+  private inputScheme: InputScheme = 'keyboard';
+  private mobileControls: Phaser.GameObjects.Container | null = null;
+  private portraitHint: Phaser.GameObjects.Text | null = null;
   private powerUps: PowerUpPickup[] = [];
   private collectedPowerUps = new Set<string>();
   private audio = getGameAudio();
@@ -82,6 +91,7 @@ export class GameScene extends Phaser.Scene {
     this.runDifficulty = this.settings.difficulty;
 
     this.controls = new Controls(this);
+    this.inputScheme = detectInputScheme(createInputDeviceSnapshot(this.sys.game.device));
     this.terrain = new Terrain(this);
     this.progression = new RunProgression(this.runDifficulty);
     this.pauseState = resetPauseState();
@@ -101,6 +111,8 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => this.handleEscape());
     this.input.keyboard?.once('keydown', () => this.audio.unlock());
     this.input.once('pointerdown', () => this.audio.unlock());
+    this.showMobileControls();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.clearTouch());
 
     this.score = 0;
     this.lives = getDifficultyProfile(this.runDifficulty).lives;
@@ -112,6 +124,8 @@ export class GameScene extends Phaser.Scene {
 
   override update(time: number, delta: number): void {
     if (this.pauseState.paused) return;
+
+    this.updatePortraitHint();
 
     this.terrain.updateHazards(time);
     this.lander.update(time, delta);
@@ -564,6 +578,8 @@ export class GameScene extends Phaser.Scene {
   private pauseGame(): void {
     if (this.pauseState.paused) return;
     this.audio.playPause();
+    this.controls.clearTouch();
+    this.mobileControls?.setVisible(false);
     this.pauseState = pauseState(this.pauseState);
     this.physics.world.pause();
     this.showPauseOverlay();
@@ -573,6 +589,7 @@ export class GameScene extends Phaser.Scene {
     this.clearPauseUi();
     this.physics.world.resume();
     this.pauseState = resumeState(this.pauseState);
+    this.mobileControls?.setVisible(this.inputScheme === 'touch');
     this.audio.playResume();
   }
 
@@ -626,6 +643,7 @@ export class GameScene extends Phaser.Scene {
 
   private returnToMainMenu(): void {
     this.audio.setThrusting(false);
+    this.controls.clearTouch();
     this.clearPauseUi();
     this.pauseState = resetPauseState();
     this.physics.world.resume();
@@ -658,6 +676,94 @@ export class GameScene extends Phaser.Scene {
     button.on('pointerout', () => button.setColor('#e8eef7'));
     button.on('pointerdown', onClick);
     return button;
+  }
+
+  private showMobileControls(): void {
+    this.mobileControls?.destroy(true);
+    this.mobileControls = null;
+    this.portraitHint = null;
+
+    if (this.inputScheme !== 'touch') return;
+
+    const controls = this.add.container(0, 0).setDepth(180);
+    controls.add(this.makeTouchButton(72, GAME_HEIGHT - 62, 74, 58, '<', 'left'));
+    controls.add(this.makeTouchButton(154, GAME_HEIGHT - 62, 74, 58, '>', 'right'));
+    controls.add(this.makeTouchButton(GAME_WIDTH - 104, GAME_HEIGHT - 62, 132, 58, 'THRUST', 'thrust'));
+
+    this.portraitHint = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 118, 'ROTATE DEVICE FOR BEST CONTROL', {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#ffd166',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.86);
+    controls.add(this.portraitHint);
+
+    this.mobileControls = controls;
+    this.updatePortraitHint();
+  }
+
+  private makeTouchButton(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    label: string,
+    action: TouchControlAction,
+  ): Phaser.GameObjects.Container {
+    const button = this.add.container(x, y);
+    const activePointers = new Set<number>();
+    const fill = this.add.rectangle(0, 0, width, height, 0x080c14, 0.64);
+    const border = this.add.rectangle(0, 0, width, height).setStrokeStyle(2, 0x6affd9, 0.72);
+    const text = this.add
+      .text(0, 0, label, {
+        fontFamily: 'monospace',
+        fontSize: action === 'thrust' ? '15px' : '26px',
+        color: '#e8eef7',
+      })
+      .setOrigin(0.5);
+
+    const setPressed = (pressed: boolean): void => {
+      fill.setFillStyle(pressed ? 0x12382f : 0x080c14, pressed ? 0.88 : 0.64);
+      border.setStrokeStyle(2, pressed ? 0xffffff : 0x6affd9, pressed ? 0.92 : 0.72);
+      text.setColor(pressed ? '#ffffff' : '#e8eef7');
+    };
+    const releasePointer = (pointer: Phaser.Input.Pointer): void => {
+      if (!activePointers.delete(pointer.id)) return;
+      this.controls.releaseTouch(action, pointer.id);
+      setPressed(activePointers.size > 0);
+    };
+
+    button
+      .setSize(width, height)
+      .setInteractive(
+        new Phaser.Geom.Rectangle(-width / 2, -height / 2, width, height),
+        Phaser.Geom.Rectangle.Contains,
+      );
+    button.add([fill, border, text]);
+    button.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      activePointers.add(pointer.id);
+      this.controls.pressTouch(action, pointer.id);
+      setPressed(true);
+    });
+    button.on('pointerup', releasePointer);
+    button.on('pointerout', releasePointer);
+    this.input.on('pointerup', releasePointer);
+    this.input.on('pointerupoutside', releasePointer);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.off('pointerup', releasePointer);
+      this.input.off('pointerupoutside', releasePointer);
+    });
+
+    return button;
+  }
+
+  private updatePortraitHint(): void {
+    if (!this.portraitHint) return;
+    const isPortrait =
+      typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+    this.portraitHint.setVisible(isPortrait);
   }
 
   private applySettings(): void {
