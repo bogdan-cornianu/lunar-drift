@@ -16,6 +16,11 @@ import {
 import { isHighScore } from '../systems/HighScores';
 import { Hud } from '../systems/Hud';
 import {
+  computeLandingCue,
+  formatObjectiveStatus,
+  getLandingCueLimits,
+} from '../systems/HudState';
+import {
   createPauseState,
   PauseState,
   pauseState,
@@ -112,19 +117,33 @@ export class GameScene extends Phaser.Scene {
 
     if (this.state === 'flying') {
       const body = this.lander.body as Phaser.Physics.Arcade.Body;
+      const vx = body.velocity.x;
+      const vy = body.velocity.y;
+      const angleDeg = this.normalizedAngleDeg();
+      const objective = this.progression.objective;
       this.hud.update({
         site: this.progression.site,
         score: this.score,
         lives: this.lives,
         fuel: this.lander.fuel,
         fuelMax: FUEL_MAX,
-        vx: body.velocity.x,
-        vy: body.velocity.y,
-        angleDeg: this.normalizedAngleDeg(),
+        vx,
+        vy,
+        angleDeg,
         altitude: this.estimateAltitude(),
         streak: this.progression.streak,
-        objective: this.progression.objective.label,
+        objective: formatObjectiveStatus(objective, {
+          fuel: this.lander.fuel,
+          fuelMax: FUEL_MAX,
+          vy,
+          multiplier: 0,
+        }),
+        targetFuel: objective.kind === 'fuel' ? objective.fuelMin : null,
         windX: this.progression.getDifficulty().windX,
+        landingCue: computeLandingCue(
+          { vx, vy, angleDeg },
+          getLandingCueLimits(this.runDifficulty),
+        ),
       });
     }
   }
